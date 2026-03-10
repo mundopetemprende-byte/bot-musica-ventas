@@ -41,14 +41,23 @@ def manage_db(query, params=(), fetch=False):
 # ===================== WHATSAPP =====================
 def send_whatsapp(to_phone, text):
     url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
-    headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
     payload = {
         "messaging_product": "whatsapp",
-        "to": to_phone, "type": "text",
+        "to": to_phone,
+        "type": "text",
         "text": {"body": text}
     }
-    requests.post(url, json=payload, headers=headers)
-
+    response = requests.post(url, json=payload, headers=headers)
+    
+    # ESTO ES LO QUE NECESITAMOS VER EN LOS LOGS DE RAILWAY
+    print(f"--- INTENTO DE ENVÍO A WHATSAPP ---")
+    print(f"Estado Meta: {response.status_code}")
+    print(f"Respuesta Meta: {response.text}")
+    print(f"-----------------------------------")
 # ===================== WEBHOOK =====================
 @app.route('/webhook', methods=['GET'])
 def verify():
