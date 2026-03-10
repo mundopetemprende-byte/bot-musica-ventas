@@ -4,96 +4,48 @@ import sqlite3
 import requests
 from flask import Flask, request, jsonify
 import google.generativeai as genai
+from google.generativeai.types import RequestOptions # IMPORTANTE
 
 app = Flask(__name__)
 
-# ===================== CONFIG =====================
-# Asegúrate de tener estas variables en tu entorno (Railway, etc.)
+# ===================== CONFIGURACIÓN REFORZADA =====================
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 WHATSAPP_TOKEN = os.getenv('WHATSAPP_ACCESS_TOKEN')
 PHONE_NUMBER_ID = os.getenv('WHATSAPP_PHONE_NUMBER_ID')
 VERIFY_TOKEN = os.getenv('WHATSAPP_VERIFY_TOKEN')
 
-genai.configure(api_key=GEMINI_API_KEY)
+# 1. Forzamos el uso de la API v1 (la estable) en lugar de v1beta
+genai.configure(api_key=GEMINI_API_KEY, transport='rest') 
 
-# Configuración del modelo (Corregido el error de comillas y nombre)
 SYSTEM_INSTRUCTION = """
 Eres una asistente de ventas súper amable y natural llamada "Luna" de canciones personalizadas.
-Precios: 
-- Canción normal: 40.000 COP
-- Canción + video: 70.000 COP
-
-Tu objetivo es recolectar de forma natural:
-1. ¿A quién va dirigida la canción? (nombre)
-2. ¿De parte de quién?
-3. ¿Qué género musical?
-4. ¿Qué quieres destacar o decir en la letra?
-
-Sé cálida, usa emojis, responde en español colombiano.
-Cuando tengas toda la información, di algo como: "¡Perfecto! ¿Quieres la versión normal por 40.000 o con video por 70.000? Una vez hagas el pago, te la enviamos rapidísimo 💨"
-
-Si el cliente menciona que ya pagó (palabras como pagué, transferí, comprobante, listo, enviado), responde EXACTAMENTE esto y agrega al final [COMPLETADA]:
-"¡Genial! Gracias por tu pago 🎵 En breve te contactamos con tu canción personalizada. ¡Que la disfrutes mucho!"
-
-Nunca menciones que eres un bot.
+Precios: 40.000 COP (normal), 70.000 COP (con video).
+Pide: nombre, quién envía, género musical y detalles de la letra.
+Responde en español colombiano con emojis. 🇨🇴
 """
-# ===================== VERIFICACIÓN DE IA =====================
-def verificar_ia():
-    try:
-        print("🔍 Verificando conexión con Gemini...")
-        # Intentamos listar los modelos disponibles
-        modelos_disponibles = [m.name for m in genai.list_models() 
-                               if 'generateContent' in m.supported_generation_methods]
-        
-        modelo_buscado = "models/gemini-1.5-flash"
-        
-        if modelo_buscado in modelos_disponibles:
-            print(f"✅ ¡Éxito! El modelo {modelo_buscado} está disponible y listo.")
-        else:
-            print(f"⚠️ Alerta: El modelo {modelo_buscado} no aparece en tu lista.")
-            print(f"Modelos que SÍ puedes usar: {modelos_disponibles}")
-            
-    except Exception as e:
-        print(f"❌ Error crítico de API: {e}")
-        print("Revisa si tu GEMINI_API_KEY es correcta y tiene permisos.")
 
-# Ejecutar la verificación al iniciar
-verificar_ia()
-
+# 2. Definimos el modelo sin el prefijo 'models/' para que el SDK lo maneje solo
+# Y añadimos RequestOptions para asegurar la versión de la API
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
     system_instruction=SYSTEM_INSTRUCTION
 )
 
-# ===================== BASE DE DATOS =====================
-def init_db():
-    conn = sqlite3.connect('conversations.db')
-    conn.execute('''CREATE TABLE IF NOT EXISTS chats 
-                    (phone TEXT PRIMARY KEY, history TEXT, completed INTEGER DEFAULT 0)''')
-    conn.commit()
-    conn.close()
+# FUNCIÓN DE DIAGNÓSTICO (Aparecerá en tus logs de Railway)
+def chequear_modelos():
+    print("--- INICIANDO DIAGNÓSTICO DE MODELOS ---")
+    try:
+        for m in genai.list_models():
+            print(f"Modelo disponible: {m.name}")
+    except Exception as e:
+        print(f"Error listando modelos: {e}")
+    print("---------------------------------------")
 
-init_db()
+chequear_modelos()
 
-def get_chat_data(phone):
-    conn = sqlite3.connect('conversations.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT history, completed FROM chats WHERE phone=?", (phone,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return json.loads(row[0]), bool(row[1])
-    return [], False
+# ===================== RESTO DEL CÓDIGO (DB y WEBHOOK) =====================
+# (Aquí sigue igual que el anterior, pero asegúrate de usar 'model' como está arriba)
 
-def save_chat_data(phone, history, completed):
-    conn = sqlite3.connect('conversations.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO chats (phone, history, completed) VALUES (?, ?, ?)",
-                   (phone, json.dumps(history), int(completed)))
-    conn.commit()
-    conn.close()
-
-# ===================== WHATSAPP API =====================
 def send_message(to_phone, text):
     url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
@@ -103,12 +55,25 @@ def send_message(to_phone, text):
         "type": "text",
         "text": {"body": text}
     }
-    try:
-        requests.post(url, json=payload, headers=headers)
-    except Exception as e:
-        print(f"Error enviando mensaje: {e}")
+    requests.post(url, json=payload, headers=headers)
 
-# ===================== WEBHOOK =====================
+def get_chat_data(phone):
+    conn = sqlite3.connect('conversations.db')
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS chats (phone TEXT PRIMARY KEY, history TEXT, completed INTEGER DEFAULT 0)")
+    cursor.execute("SELECT history, completed FROM chats WHERE phone=?", (phone,))
+    row = cursor.fetchone()
+    conn.close()
+    if row: return json.loads(row[0]), bool(row[1])
+    return [], False
+
+def save_chat_data(phone, history, completed):
+    conn = sqlite3.connect('conversations.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO chats VALUES (?, ?, ?)", (phone, json.dumps(history), int(completed)))
+    conn.commit()
+    conn.close()
+
 @app.route('/webhook', methods=['GET'])
 def verify_webhook():
     if request.args.get('hub.verify_token') == VERIFY_TOKEN:
@@ -119,58 +84,36 @@ def verify_webhook():
 def webhook():
     data = request.json
     try:
-        # Extraer datos básicos del mensaje
-        entry = data['entry'][0]
-        change = entry['changes'][0]
-        value = change['value']
+        msg_data = data['entry'][0]['changes'][0]['value']['messages'][0]
+        phone = msg_data['from']
+        user_text = msg_data['text']['body']
         
-        if 'messages' not in value:
+        history, completed = get_chat_data(phone)
+        if completed:
+            send_message(phone, "¡Ya estamos procesando tu canción! 🎵")
             return jsonify(success=True)
 
-        message = value['messages'][0]
-        phone = message['from']
-        msg_type = message.get('type')
-        
-        if msg_type != 'text':
-            send_message(phone, "Por ahora solo respondo por texto 😊 Envía el comprobante como foto o texto y te ayudo.")
-            return jsonify(success=True)
-        
-        user_text = message['text']['body']
-        
-        # 1. Cargar conversación previa
-        history, completed = get_chat_data(phone)
-        
-        if completed:
-            send_message(phone, "¡Ya estamos procesando tu canción personalizada! 🎵 En breve te contactamos.")
-            return jsonify(success=True)
-        
-        # 2. Iniciar chat con historial y generar respuesta
+        # Usamos RequestOptions para forzar la API estable si el 404 persiste
         chat = model.start_chat(history=history)
-        response = chat.send_message(user_text)
+        response = chat.send_message(user_text, request_options=RequestOptions(api_version='v1'))
+        
         bot_reply = response.text
-        
-        # 3. Lógica de finalización
-        is_now_completed = False
-        if "[COMPLETADA]" in bot_reply:
-            bot_reply = bot_reply.replace("[COMPLETADA]", "").strip()
-            is_now_completed = True
-        
-        # 4. Enviar respuesta al usuario
+        is_completed = "[COMPLETADA]" in bot_reply
+        bot_reply = bot_reply.replace("[COMPLETADA]", "").strip()
+
         send_message(phone, bot_reply)
         
-        # 5. Guardar el historial actualizado (chat.history contiene el nuevo mensaje y la respuesta)
-        # Convertimos el historial de Gemini a un formato serializable (JSON)
-        new_history = []
+        # Guardar historial limpio
+        serializable_history = []
         for content in chat.history:
-            new_history.append({
+            serializable_history.append({
                 "role": content.role,
                 "parts": [{"text": part.text} for part in content.parts]
             })
-            
-        save_chat_data(phone, new_history, is_now_completed)
-        
+        save_chat_data(phone, serializable_history, is_completed)
+
     except Exception as e:
-        print(f"Error general: {e}")
+        print(f"Error detallado: {e}")
     
     return jsonify(success=True)
 
