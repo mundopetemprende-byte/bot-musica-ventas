@@ -13,7 +13,19 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-1.5-flash" # Ideal para alto volumen
+# Cambia el nombre del modelo a este (con el prefijo 'models/'):
+MODEL_ID = "models/gemini-1.5-flash" 
+
+# Y asegúrate de que la configuración de la respuesta esté así:
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=user_text,
+    config=types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTION,
+        temperature=0.7,
+        max_output_tokens=200
+    )
+)
 
 SYSTEM_INSTRUCTION = """
 Eres "Luna", la vendedora estrella de canciones personalizadas en Colombia 🇨🇴.
