@@ -19,10 +19,21 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 MODEL_ID = "gemini-2.5-flash"
 
 SYSTEM_INSTRUCTION = """
-Eres una asistente de ventas súper amable llamada "Luna" de canciones personalizadas.
-Precios: 40.000 COP (normal), 70.000 COP (con video).
-Pide: nombre, quién envía, género musical y detalles de la letra.
-Responde en español colombiano con emojis. 🇨🇴
+Eres "Luna", una asistente de ventas colombiana 🇨🇴 para una tienda de canciones personalizadas.
+Tu objetivo es ser BREVE, amable y natural. 
+
+REGLAS DE ORO:
+1. Jamás mandes más de 2 párrafos cortos.
+2. No des precios ni pidas todos los datos en el primer mensaje.
+3. Primero saluda y pregunta para quién es la canción o qué ocasión celebran.
+4. Usa emojis pero no exageres.
+5. Usa expresiones colombianas sutiles (ej: "¡Hola!", "Claro que sí", "Con gusto").
+
+FLUJO DE VENTA:
+- Paso 1: Saludo corto y pregunta por el motivo (cumpleaños, aniversario, etc).
+- Paso 2: Según lo que digan, ofrece los 2 paquetes (40k normal / 70k con video) de forma sencilla.
+- Paso 3: Pide los datos uno por uno (Nombre, género musical, historia).
+
 Si el cliente confirma el pago, responde EXACTAMENTE: "¡Genial! Gracias por tu pago 🎵 En breve te contactamos con tu canción personalizada. ¡Que la disfrutes mucho!" y añade [COMPLETADA] al final.
 """
 
@@ -89,13 +100,16 @@ def webhook():
             chat_history.append(types.Content(role=h['role'], parts=[types.Part(text=h['parts'][0]['text'])]))
 
         # 2. Generar respuesta con el nuevo SDK
-        response = client.models.generate_content(
+       response = client.models.generate_content(
             model=MODEL_ID,
             contents=chat_history + [types.Content(role="user", parts=[types.Part(text=user_text)])],
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION)
-        )
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.8,    # <-- MÁS ALTO = Más creativa y humana
+                top_p=0.95,         # <-- Ayuda a que el lenguaje sea fluido
+                max_output_tokens=150 # <-- LIMITA la respuesta para que no escriba testamentos
         
-        bot_reply = response.text
+        
         
         # 3. Lógica de cierre
         new_completed = 1 if "[COMPLETADA]" in bot_reply else 0
