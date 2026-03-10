@@ -13,7 +13,7 @@ VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 # Probemos con el 2.0 que ya te había reconocido antes:
-MODEL_ID = "gemini-1.5-flash" 
+MODEL_ID = "gemini-2.0-flash" 
 
 SYSTEM_INSTRUCTION = """
 Eres "Luna", asistente de ventas en Colombia 🇨🇴. 
