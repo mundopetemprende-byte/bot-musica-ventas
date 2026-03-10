@@ -15,7 +15,7 @@ VERIFY_TOKEN = os.getenv('WHATSAPP_VERIFY_TOKEN')
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
+    models/gemini-1.5-flash",
     system_instruction="""
 Eres una asistente de ventas súper amable y natural llamada "Luna" de canciones personalizadas.
 Precios: 
